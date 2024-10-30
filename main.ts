@@ -1,89 +1,195 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import {
+	App,
+	MarkdownRenderer,
+	Notice,
+	Plugin,
+	PluginSettingTab,
+	Setting,
+	TFile,
+	moment,
+} from "obsidian";
 
-// Remember to rename these classes and interfaces!
-
-interface MyPluginSettings {
-	mySetting: string;
+interface TaskInboxSettings {
+	inboxPath: string;
+	reminderTime: string; // Format: HH:mm
+	timeFormat: string; // Format: YYYYMMDDHHmmss
 }
 
-const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
-}
+const DEFAULT_SETTINGS: TaskInboxSettings = {
+	inboxPath: "Inbox/tasks.md",
+	reminderTime: "04:00",
+	timeFormat: "YYYYMMDDHHmmss",
+};
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+export default class TaskInboxPlugin extends Plugin {
+	settings: TaskInboxSettings = DEFAULT_SETTINGS;
 
 	async onload() {
 		await this.loadSettings();
-
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
-
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
-
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
+		// Set up daily reminder check
+		this.app.workspace.onLayoutReady(() => {
+			// Monitor file creation after workspace is ready to avoid initial file load events
+			this.registerEvent(
+				this.app.vault.on("create", async (file) => {
+					if (
+						file instanceof TFile &&
+						file.path !== this.settings.inboxPath
+					) {
+						setTimeout(async () => {
+							await this.appendTaskToInbox(file, file.path);
+						}, 1000);
 					}
+				})
+			);
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
+			this.setupDailyReminder();
+		});
+
+		// Test inbox notice
+		this.addCommand({
+			id: "test-inbox-notice",
+			name: "Test inbox notice",
+			callback: () => {
+				this.checkUnfinishedTasks();
+			},
+		});
+
+		// Add settings tab
+		this.addSettingTab(new TaskInboxSettingTab(this.app, this));
+	}
+	async appendTaskToInbox(targetFile: TFile, filePath: string) {
+		let inboxFile = this.app.vault.getAbstractFileByPath(
+			this.settings.inboxPath
+		);
+
+		if (!inboxFile) {
+			try {
+				// Split path into folder parts and create folders if needed
+				const pathParts = this.settings.inboxPath.split("/");
+				const fileName = pathParts.pop(); // Remove file name
+				let currentPath = "";
+
+				// Create each folder in path if it doesn't exist
+				for (const folder of pathParts) {
+					currentPath += folder;
+					const folderExists =
+						this.app.vault.getFolderByPath(currentPath);
+					if (!folderExists) {
+						await this.app.vault.createFolder(currentPath);
+					}
+					currentPath += "/";
 				}
+
+				// Create the file after ensuring folders exist
+				inboxFile = await this.app.vault.create(
+					this.settings.inboxPath,
+					""
+				);
+			} catch (error) {
+				new Notice(
+					`Failed to create inbox file at ${this.settings.inboxPath}`
+				);
+				return;
 			}
-		});
+		}
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+		if (!(inboxFile instanceof TFile)) {
+			new Notice("Inbox path points to a folder, not a file");
+			return;
+		}
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
+		const newTask = `- [ ] ${moment().format(
+			this.settings.timeFormat
+		)} ${this.app.fileManager.generateMarkdownLink(
+			targetFile,
+			inboxFile.path
+		)}\n`;
+		await this.app.vault.append(inboxFile, newTask);
+	}
 
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+	setupDailyReminder() {
+		// Calculate initial delay until next check time
+		const getNextCheckDelay = () => {
+			const now = moment();
+			const [hours, minutes] = this.settings.reminderTime
+				.split(":")
+				.map(Number);
+			const nextCheck = moment(now)
+				.hours(hours)
+				.minutes(minutes)
+				.seconds(0)
+				.milliseconds(0);
+
+			if (nextCheck.isSameOrBefore(now)) {
+				nextCheck.add(1, "days");
+			}
+
+			return nextCheck.diff(now);
+		};
+
+		const scheduleCheck = () => {
+			this.registerInterval(
+				window.setInterval(async () => {
+					await this.checkUnfinishedTasks();
+					scheduleCheck(); // Schedule next check
+				}, getNextCheckDelay())
+			);
+		};
+
+		scheduleCheck();
+	}
+
+	async checkUnfinishedTasks() {
+		const inboxFile = this.app.vault.getAbstractFileByPath(
+			this.settings.inboxPath
+		);
+
+		if (!(inboxFile instanceof TFile)) {
+			new Notice(`Inbox file not found at ${this.settings.inboxPath}`);
+			return;
+		}
+
+		const content = await this.app.vault.read(inboxFile);
+		const unfinishedTasks = content
+			.split("\n")
+			.filter((line) => line.match(/^(-|\*|\d+\.)\s\[ \](.*)/));
+
+		if (unfinishedTasks && unfinishedTasks.length > 0) {
+			const newFragment = document.createDocumentFragment();
+
+			const div = newFragment.createEl("div");
+
+			const markdownFileContent = `
+You have ${unfinishedTasks.length} unfinished tasks in your inbox!
+You can click on the link below to view your inbox.
+`;
+			const buttonEl = newFragment.createEl("button");
+			buttonEl.setText("View Inbox");
+			buttonEl.onclick = (e) => {
+				this.app.workspace.getLeaf("split").openFile(inboxFile);
+			};
+			new Notice(newFragment, 0);
+
+			MarkdownRenderer.render(
+				this.app,
+				markdownFileContent,
+				div,
+				inboxFile.path,
+				this
+			);
+		}
 	}
 
 	onunload() {
-
+		// Clean up any intervals or timeouts here if needed
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			await this.loadData()
+		);
 	}
 
 	async saveSettings() {
@@ -91,44 +197,54 @@ export default class MyPlugin extends Plugin {
 	}
 }
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
+class TaskInboxSettingTab extends PluginSettingTab {
+	plugin: TaskInboxPlugin;
 
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
-}
-
-class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
-
-	constructor(app: App, plugin: MyPlugin) {
+	constructor(app: App, plugin: TaskInboxPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
 
 	display(): void {
-		const {containerEl} = this;
+		const { containerEl } = this;
 
 		containerEl.empty();
 
 		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
+			.setName("Inbox file path")
+			.setDesc("Path to the file where new tasks will be added")
+			.addText((text) =>
+				text
+					.setPlaceholder("Inbox/tasks.md")
+					.setValue(this.plugin.settings.inboxPath)
+					.onChange(async (value) => {
+						this.plugin.settings.inboxPath = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Reminder time")
+			.setDesc(
+				"Time to check for unfinished tasks (24-hour format, e.g., 04:00)"
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("04:00")
+					.setValue(this.plugin.settings.reminderTime)
+					.onChange(async (value) => {
+						if (/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(value)) {
+							this.plugin.settings.reminderTime = value;
+							await this.plugin.saveSettings();
+						}
+					})
+			);
+
+		new Setting(containerEl).setName("Time format").addText((text) =>
+			text.setValue("YYYYMMDDHHmmss").onChange(async (value) => {
+				this.plugin.settings.timeFormat = value;
+				await this.plugin.saveSettings();
+			})
+		);
 	}
 }
