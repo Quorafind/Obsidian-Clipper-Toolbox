@@ -1,7 +1,7 @@
 {
-	"name": "obsidian-sample-plugin",
+	"name": "file-inbox",
 	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"description": "A simple Obsidian plugin to notify you when you have unfinished tasks (tasks are based on file creation).",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",

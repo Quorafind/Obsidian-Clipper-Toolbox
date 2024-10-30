@@ -10,12 +10,14 @@ import {
 } from "obsidian";
 
 interface TaskInboxSettings {
+	// eventType: "create" | "modify";
 	inboxPath: string;
 	reminderTime: string; // Format: HH:mm
 	timeFormat: string; // Format: YYYYMMDDHHmmss
 }
 
 const DEFAULT_SETTINGS: TaskInboxSettings = {
+	// eventType: "create",
 	inboxPath: "Inbox/tasks.md",
 	reminderTime: "04:00",
 	timeFormat: "YYYYMMDDHHmmss",
@@ -29,6 +31,22 @@ export default class TaskInboxPlugin extends Plugin {
 		// Set up daily reminder check
 		this.app.workspace.onLayoutReady(() => {
 			// Monitor file creation after workspace is ready to avoid initial file load events
+			// if (this.settings.eventType === "create") {
+
+			// } else {
+			// 	this.registerEvent(
+			// 		this.app.vault.on("modify", async (file) => {
+			// 			if (
+			// 				file instanceof TFile &&
+			// 				file.path !== this.settings.inboxPath
+			// 			) {
+			// 				setTimeout(async () => {
+			// 					await this.appendTaskToInbox(file, file.path);
+			// 				}, 1000);
+			// 			}
+			// 		})
+			// 	);
+			// }
 			this.registerEvent(
 				this.app.vault.on("create", async (file) => {
 					if (
@@ -45,18 +63,10 @@ export default class TaskInboxPlugin extends Plugin {
 			this.setupDailyReminder();
 		});
 
-		// Test inbox notice
-		this.addCommand({
-			id: "test-inbox-notice",
-			name: "Test inbox notice",
-			callback: () => {
-				this.checkUnfinishedTasks();
-			},
-		});
-
 		// Add settings tab
 		this.addSettingTab(new TaskInboxSettingTab(this.app, this));
 	}
+
 	async appendTaskToInbox(targetFile: TFile, filePath: string) {
 		let inboxFile = this.app.vault.getAbstractFileByPath(
 			this.settings.inboxPath
@@ -209,6 +219,21 @@ class TaskInboxSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 
 		containerEl.empty();
+
+		// new Setting(containerEl)
+		// 	.setName("Event type")
+		// 	.setDesc("Event type to monitor for new tasks")
+		// 	.addDropdown((dropdown) =>
+		// 		dropdown
+		// 			.addOptions({ create: "Create", modify: "Modify" })
+		// 			.setValue(this.plugin.settings.eventType)
+		// 			.onChange(async (value) => {
+		// 				this.plugin.settings.eventType = value as
+		// 					| "create"
+		// 					| "modify";
+		// 				await this.plugin.saveSettings();
+		// 			})
+		// 	);
 
 		new Setting(containerEl)
 			.setName("Inbox file path")
