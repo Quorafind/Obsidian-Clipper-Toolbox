@@ -43,6 +43,7 @@ export default class TaskInboxPlugin extends Plugin {
 		);
 
 		this.app.workspace.onLayoutReady(() => {
+			if (!this.settings.supportTaskWhenCreateFile) return;
 			this.registerFileEvents();
 			this.setupDailyReminder();
 		});
