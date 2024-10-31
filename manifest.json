@@ -1,9 +1,9 @@
 {
-	"id": "task-inbox",
-	"name": "Task Inbox",
-	"version": "1.0.1",
+	"id": "clipper-toolbox",
+	"name": "Clipper Toolbox",
+	"version": "1.1.0",
 	"minAppVersion": "0.15.0",
-	"description": "Adds a task inbox to Obsidian.",
+	"description": "Adds a toolbox to Obsidian, useful for managing your clipper.",
 	"author": "Obsidian",
 	"authorUrl": "https://obsidian.md",
 	"fundingUrl": "https://obsidian.md/pricing",

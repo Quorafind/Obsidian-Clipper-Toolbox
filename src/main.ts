@@ -9,22 +9,26 @@ import {
 	moment,
 } from "obsidian";
 import { TaskManager } from "./TaskManager";
+
 interface TaskInboxSettings {
+	supportTaskWhenCreateFile: boolean;
 	// eventType: "create" | "modify";
 	inboxPath: string;
 	reminderTime: string; // Format: HH:mm
 	timeFormat: string; // Format: YYYYMMDDHHmmss
 	targetFolder: string;
+	downloadImages: boolean;
 }
 
 const DEFAULT_SETTINGS: TaskInboxSettings = {
+	supportTaskWhenCreateFile: true,
 	// eventType: "create",
 	inboxPath: "Inbox/tasks.md",
 	reminderTime: "04:00",
 	timeFormat: "YYYYMMDDHHmmss",
 	targetFolder: "Clippings/",
+	downloadImages: false,
 };
-
 
 export default class TaskInboxPlugin extends Plugin {
 	settings: TaskInboxSettings = DEFAULT_SETTINGS;
@@ -56,6 +60,9 @@ export default class TaskInboxPlugin extends Plugin {
 				) {
 					setTimeout(async () => {
 						await this.taskManager.appendTask(file, file.path);
+						if (this.settings.downloadImages) {
+							this.downloadImages(file);
+						}
 					}, 1000);
 				}
 			})
@@ -126,6 +133,14 @@ You can click on the link below to view your inbox.
 		}
 	}
 
+	private async downloadImages(targetFile: TFile) {
+		if (!this.app.plugins.plugins["obsidian-local-images-plus"]) return;
+		this.app.plugins.plugins["obsidian-local-images-plus"].processPage(
+			targetFile,
+			true
+		);
+	}
+
 	onunload() {
 		// Clean up any intervals or timeouts here if needed
 	}
@@ -156,6 +171,70 @@ class TaskInboxSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
+		new Setting(containerEl)
+			.setName("Support task when create file")
+			.setDesc(
+				"When a file is created in the target folder, it will be added to your inbox"
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.supportTaskWhenCreateFile)
+					.onChange(async (value) => {
+						this.plugin.settings.supportTaskWhenCreateFile = value;
+						await this.plugin.saveSettings();
+
+						setTimeout(() => {
+							this.display();
+						}, 800);
+					})
+			);
+
+		if (this.plugin.settings.supportTaskWhenCreateFile) {
+			this.generateTaskInbox(containerEl);
+		}
+
+		const fragment = new DocumentFragment();
+
+		fragment.createEl(
+			"div",
+			{
+				attr: {
+					class: "task-inbox-setting",
+				},
+			},
+			(el) => {
+				el.createEl(
+					"span",
+					{
+						text: "You need to download Local Images Plus first to use this feature	: ",
+					},
+					(el) => {
+						el.createEl("a", {
+							attr: {
+								target: "_blank",
+								href: "obsidian://show-plugin?id=obsidian-local-images-plus",
+							},
+							text: "Local Images Plus",
+						});
+					}
+				);
+			}
+		);
+
+		new Setting(containerEl)
+			.setName("Download images via Local Images Plus")
+			.setDesc(fragment)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.downloadImages)
+					.onChange(async (value) => {
+						this.plugin.settings.downloadImages = value;
+						await this.plugin.saveSettings();
+					})
+			);
+	}
+
+	generateTaskInbox(containerEl: HTMLElement) {
 		new Setting(containerEl)
 			.setName("Set target folder")
 			.setDesc(

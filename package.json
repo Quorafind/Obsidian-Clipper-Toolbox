@@ -1,6 +1,6 @@
 {
-	"name": "file-inbox",
-	"version": "1.0.1",
+	"name": "clipper-toolbox",
+	"version": "1.1.0",
 	"description": "A simple Obsidian plugin to notify you when you have unfinished tasks (tasks are based on file creation).",
 	"main": "main.js",
 	"scripts": {
