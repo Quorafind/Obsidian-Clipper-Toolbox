@@ -43,9 +43,9 @@ export default class TaskInboxPlugin extends Plugin {
 		);
 
 		this.app.workspace.onLayoutReady(() => {
-			if (!this.settings.supportTaskWhenCreateFile) return;
 			this.registerFileEvents();
-			this.setupDailyReminder();
+			if (this.settings.supportTaskWhenCreateFile)
+				this.setupDailyReminder();
 		});
 
 		this.addSettingTab(new TaskInboxSettingTab(this.app, this));
@@ -60,7 +60,9 @@ export default class TaskInboxPlugin extends Plugin {
 					file.extension === "md"
 				) {
 					setTimeout(async () => {
-						await this.taskManager.appendTask(file, file.path);
+						if (this.settings.supportTaskWhenCreateFile) {
+							await this.taskManager.appendTask(file, file.path);
+						}
 						if (this.settings.downloadImages) {
 							this.downloadImages(file);
 						}
